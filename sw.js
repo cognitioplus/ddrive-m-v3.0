@@ -1,16 +1,27 @@
-const express = require('express');
-const path = require('path');
-const app = express();
-const PORT = process.env.PORT || 3000;
+const CACHE_NAME = 'ddrive-v3';
+const ASSETS = [
+  './',
+  './index.html',
+  './manifest.json',
+  'https://cdn.tailwindcss.com',
+  'https://unpkg.com/react@18/umd/react.production.min.js',
+  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
+  'https://unpkg.com/lucide@latest',
+  'https://unpkg.com/recharts/umd/Recharts.js' // 👈 Add Recharts explicitly
+];
 
-// Serve static files from the repository root
-app.use(express.static(path.join(__dirname, '/')));
-
-// Handle PWA routing (SPA fallback)
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+// Install Event
+self.addEventListener('install', (e) => {
+  e.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
+  );
 });
 
-app.listen(PORT, () => {
-    console.log(`DDRiVE-M Platform running at http://localhost:${PORT}`);
+// Fetch Event (Offline Support)
+self.addEventListener('fetch', (e) => {
+  e.respondWith(
+    caches.match(e.request).then((response) => {
+      return response || fetch(e.request);
+    })
+  );
 });
