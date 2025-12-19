@@ -64,21 +64,17 @@ Installation
 
 Clone the repository:
 
-git clone [https://github.com/your-repo/ddrive-m-pwa.git](https://github.com/your-repo/ddrive-m-pwa.git)
-cd ddrive-m-pwa
-
+git clone [https://github.com/cognitioplus/ddrive-m-v3.0.git]
 
 Install dependencies:
 
 npm install
-
 
 Running the App
 
 Start the local development server:
 
 npm start
-
 
 The application will be accessible at http://localhost:3000.
 
