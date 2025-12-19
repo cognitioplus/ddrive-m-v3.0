@@ -1,150 +1,119 @@
-// Constants
+const SECRET_SALT = "ddrive-salt-2025"; // In real apps, use Web Crypto or backend tokens
+
+function encrypt(data) {
+  return btoa(JSON.stringify(data) + SECRET_SALT);
+}
+
+function decrypt(str) {
+  try {
+    const raw = atob(str);
+    if (!raw.endsWith(SECRET_SALT)) return null;
+    return JSON.parse(raw.slice(0, -SECRET_SALT.length));
+  } catch {
+    return null;
+  }
+}
+
 const DB_KEYS = {
-  AUTH_TOKEN: 'ddrive_auth_token',
-  USER_INFO: 'ddrive_user_info',
-  PILLAR_DATA: 'ddrive_pillar_data',
-  METRICS: 'ddrive_metrics',
-  AI_HISTORY: 'ddrive_ai_history',
-  USER_PREFS: 'ddrive_user_prefs'
+  AUTH: 'ddrive_auth_v2',
+  METRICS: 'ddrive_metrics_v2',
+  PILLARS: 'ddrive_pillars_v2',
+  AI_HISTORY: 'ddrive_ai_history_v2',
+  PREFS: 'ddrive_prefs_v2'
 };
 
-// Base utility
-function safeJsonParse(str) {
-  try {
-    return JSON.parse(str);
-  } catch {
-    return null;
-  }
-}
-
-function safeJsonStringify(obj) {
-  try {
-    return JSON.stringify(obj);
-  } catch {
-    return null;
-  }
-}
-
-// ---- Authentication ----
+// --- Auth (supports any user with known credentials) ---
 export const AuthDB = {
-  save(user) {
-    const token = btoa(JSON.stringify({ email: user.email, ts: Date.now() }));
-    localStorage.setItem(DB_KEYS.AUTH_TOKEN, token);
-    localStorage.setItem(DB_KEYS.USER_INFO, safeJsonStringify(user));
+  // Predefined users (expand as needed)
+  VALID_USERS: {
+    'admin@ddrive-m.com': 'resilience2025',
+    'analyst@ddrive-m.com': 'monitor2025',
+    'viewer@ddrive-m.com': 'viewonly2025'
+  },
+  save(email) {
+    const token = encrypt({ email, ts: Date.now() });
+    localStorage.setItem(DB_KEYS.AUTH, token);
   },
   get() {
-    const token = localStorage.getItem(DB_KEYS.AUTH_TOKEN);
-    const userInfo = safeJsonParse(localStorage.getItem(DB_KEYS.USER_INFO));
-    if (!token || !userInfo) return null;
-
-    try {
-      const payload = JSON.parse(atob(token));
-      if (Date.now() - payload.ts > 30 * 24 * 60 * 60 * 1000) {
-        this.clear();
-        return null;
-      }
-      return userInfo;
-    } catch {
+    const token = localStorage.getItem(DB_KEYS.AUTH);
+    if (!token) return null;
+    const payload = decrypt(token);
+    if (!payload || Date.now() - payload.ts > 30 * 24 * 60 * 60 * 1000) {
       this.clear();
       return null;
     }
+    return { email: payload.email, name: payload.email.split('@')[0].replace('.', ' ').split(' ').map(w => w[0].toUpperCase() + w.slice(1)).join(' ') + " (DDRiVE)" };
   },
   clear() {
-    Object.values(DB_KEYS).forEach(key => localStorage.removeItem(key));
+    Object.values(DB_KEYS).forEach(k => localStorage.removeItem(k));
+  },
+  validate(email, password) {
+    return this.VALID_USERS[email] === password;
   }
 };
 
-// ---- Pillar Telemetry (for each of the 7 DDRiVE pillars) ----
-export const PillarDB = {
-  initialize() {
-    if (!localStorage.getItem(DB_KEYS.PILLAR_DATA)) {
-      const initial = {
-        detection: { status: 'active', lastUpdate: Date.now(), alerts: 3 },
-        diagnostics: { status: 'active', lastUpdate: Date.now(), issues: 1 },
-        response: { status: 'standby', lastUpdate: Date.now(), incidents: 0 },
-        integration: { status: 'synced', lastUpdate: Date.now(), sources: 12 },
-        validation: { status: 'passed', lastUpdate: Date.now(), tests: 8 },
-        enhancement: { status: 'learning', lastUpdate: Date.now(), queries: 0 },
-        monitoring: { status: 'tracking', lastUpdate: Date.now(), score: 84 }
-      };
-      localStorage.setItem(DB_KEYS.PILLAR_DATA, safeJsonStringify(initial));
-    }
-  },
-  getAll() {
-    this.initialize();
-    return safeJsonParse(localStorage.getItem(DB_KEYS.PILLAR_DATA)) || {};
-  },
-  update(pillarId, data) {
-    const all = this.getAll();
-    all[pillarId] = { ...all[pillarId], ...data, lastUpdate: Date.now() };
-    localStorage.setItem(DB_KEYS.PILLAR_DATA, safeJsonStringify(all));
-    return all[pillarId];
-  }
-};
-
-// ---- System Metrics (Resilience Score, Sensors, etc.) ----
+// --- Metrics ---
 export const MetricsDB = {
-  initialize() {
-    if (!localStorage.getItem(DB_KEYS.METRICS)) {
-      const initial = {
-        criticalHazards: 4,
-        activeSensors: 1248,
-        resilienceScore: 84,
-        readinessLevel: 'Alpha',
-        uptime: 98.4,
-        lastRefresh: Date.now()
-      };
-      localStorage.setItem(DB_KEYS.METRICS, safeJsonStringify(initial));
-    }
+  DEFAULT: {
+    criticalHazards: 4,
+    activeSensors: 1248,
+    resilienceScore: 84,
+    readinessLevel: 'Alpha',
+    uptime: 98.4
   },
   get() {
-    this.initialize();
-    return safeJsonParse(localStorage.getItem(DB_KEYS.METRICS)) || {};
+    const raw = localStorage.getItem(DB_KEYS.METRICS);
+    return raw ? decrypt(raw) || this.DEFAULT : this.DEFAULT;
   },
   update(updates) {
     const current = this.get();
-    const updated = { ...current, ...updates, lastRefresh: Date.now() };
-    localStorage.setItem(DB_KEYS.METRICS, safeJsonStringify(updated));
-    return updated;
+    const next = { ...current, ...updates, lastRefresh: Date.now() };
+    localStorage.setItem(DB_KEYS.METRICS, encrypt(next));
+    return next;
   }
 };
 
-// ---- AI Query History ----
-export const AiHistoryDB = {
-  initialize() {
-    if (!localStorage.getItem(DB_KEYS.AI_HISTORY)) {
-      localStorage.setItem(DB_KEYS.AI_HISTORY, '[]');
-    }
+// --- Pillars ---
+export const PillarDB = {
+  DEFAULT: {
+    detection: { status: 'active', alerts: 3, lastUpdate: Date.now() },
+    diagnostics: { status: 'active', issues: 1, lastUpdate: Date.now() },
+    response: { status: 'standby', incidents: 0, lastUpdate: Date.now() },
+    integration: { status: 'synced', sources: 12, lastUpdate: Date.now() },
+    validation: { status: 'passed', tests: 8, lastUpdate: Date.now() },
+    enhancement: { status: 'learning', queries: 0, lastUpdate: Date.now() },
+    monitoring: { status: 'tracking', score: 84, lastUpdate: Date.now() }
   },
+  getAll() {
+    const raw = localStorage.getItem(DB_KEYS.PILLARS);
+    return raw ? decrypt(raw) || this.DEFAULT : this.DEFAULT;
+  }
+};
+
+// --- AI History ---
+export const AiHistoryDB = {
   add(prompt, response) {
-    this.initialize();
-    const history = safeJsonParse(localStorage.getItem(DB_KEYS.AI_HISTORY)) || [];
+    const history = this.list();
     history.unshift({ id: crypto.randomUUID(), prompt, response, ts: Date.now() });
-    // Keep only last 20
-    const trimmed = history.slice(0, 20);
-    localStorage.setItem(DB_KEYS.AI_HISTORY, safeJsonStringify(trimmed));
+    localStorage.setItem(DB_KEYS.AI_HISTORY, encrypt(history.slice(0, 20)));
   },
   list() {
-    this.initialize();
-    return safeJsonParse(localStorage.getItem(DB_KEYS.AI_HISTORY)) || [];
+    const raw = localStorage.getItem(DB_KEYS.AI_HISTORY);
+    return raw ? decrypt(raw) || [] : [];
   }
 };
 
-// ---- User Preferences ----
+// --- Preferences ---
 export const UserPrefsDB = {
-  initialize() {
-    if (!localStorage.getItem(DB_KEYS.USER_PREFS)) {
-      localStorage.setItem(DB_KEYS.USER_PREFS, safeJsonStringify({ sidebarCollapsed: false }));
-    }
-  },
+  DEFAULT: { sidebarCollapsed: false },
   get() {
-    this.initialize();
-    return safeJsonParse(localStorage.getItem(DB_KEYS.USER_PREFS)) || {};
+    const raw = localStorage.getItem(DB_KEYS.PREFS);
+    return raw ? decrypt(raw) || this.DEFAULT : this.DEFAULT;
   },
   set(updates) {
     const current = this.get();
     const next = { ...current, ...updates };
-    localStorage.setItem(DB_KEYS.USER_PREFS, safeJsonStringify(next));
+    localStorage.setItem(DB_KEYS.PREFS, encrypt(next));
     return next;
   }
 };
